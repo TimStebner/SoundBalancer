@@ -15,6 +15,8 @@ public struct AppVolumeRowView: View {
         let volume = store.volume(for: app)
         let percent = Int(round(volume * 100.0))
         let isDefault = store.isDefault(for: app)
+        let usesNativeRouting = store.usesNativeRouting(for: app)
+        let isCallPassthrough = store.skipAppsDuringInputCapture && app.isRunningInput
 
         VStack(spacing: 6) {
             HStack(spacing: 8) {
@@ -37,11 +39,13 @@ public struct AppVolumeRowView: View {
 
                 Spacer()
 
-                Text(isMuted ? "Muted" : "\(percent)%")
+                Text(usesNativeRouting ? "Direct" : (isCallPassthrough ? "Mic bypass" : (isMuted ? "Muted" : "\(percent)%")))
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(
-                        isMuted ? .red.opacity(0.8) :
+                        usesNativeRouting || isCallPassthrough ? .secondary :
+                            (isMuted ? .red.opacity(0.8) :
                             (percent > 100 ? LiquidGlassTheme.boostOrange : .secondary)
+                            )
                     )
                     .frame(width: 48, alignment: .trailing)
 
@@ -57,6 +61,20 @@ public struct AppVolumeRowView: View {
                 }
                 .buttonStyle(.plain)
                 .help(isMuted ? "Unmute" : "Mute")
+
+                Button {
+                    store.toggleNativeRouting(for: app)
+                } label: {
+                    Image(systemName: usesNativeRouting ? "waveform.slash" : "waveform")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(usesNativeRouting ? LiquidGlassTheme.accentCyan : .secondary)
+                        .padding(5)
+                        .background(Color.white.opacity(usesNativeRouting ? 0.15 : 0.05))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(usesNativeRouting ? "Return to SoundBalancer volume control" : "Route directly through macOS; per-app volume and mute will not apply")
+                .accessibilityLabel(usesNativeRouting ? "Use SoundBalancer routing" : "Use native macOS routing")
 
                 if !isDefault {
                     Button {
@@ -79,8 +97,10 @@ public struct AppVolumeRowView: View {
                     get: { store.volume(for: app) },
                     set: { store.setVolume($0, for: app) }
                 ),
-                isMuted: isMuted
+                isMuted: isMuted || usesNativeRouting
             )
+            .disabled(usesNativeRouting)
+            .help(usesNativeRouting ? "Per-app volume is unavailable with native routing" : "")
         }
         .glassCard(cornerRadius: 11, padding: 10)
     }

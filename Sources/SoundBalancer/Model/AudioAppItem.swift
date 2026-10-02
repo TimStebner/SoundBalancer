@@ -9,6 +9,7 @@ public struct AudioAppItem: Identifiable, Hashable, @unchecked Sendable {
     public let bundleID: String?
     public let icon: NSImage?
     public let isRunningOutput: Bool
+    public let isRunningInput: Bool
 
     public init(
         id: AudioObjectID,
@@ -16,7 +17,8 @@ public struct AudioAppItem: Identifiable, Hashable, @unchecked Sendable {
         name: String,
         bundleID: String?,
         icon: NSImage?,
-        isRunningOutput: Bool
+        isRunningOutput: Bool,
+        isRunningInput: Bool = false
     ) {
         self.id = id
         self.pid = pid
@@ -24,10 +26,12 @@ public struct AudioAppItem: Identifiable, Hashable, @unchecked Sendable {
         self.bundleID = bundleID
         self.icon = icon
         self.isRunningOutput = isRunningOutput
+        self.isRunningInput = isRunningInput
     }
 
     public static func == (lhs: AudioAppItem, rhs: AudioAppItem) -> Bool {
-        lhs.id == rhs.id && lhs.name == rhs.name && lhs.isRunningOutput == rhs.isRunningOutput
+        lhs.id == rhs.id && lhs.name == rhs.name &&
+            lhs.isRunningOutput == rhs.isRunningOutput && lhs.isRunningInput == rhs.isRunningInput
     }
 
     public func hash(into hasher: inout Hasher) {

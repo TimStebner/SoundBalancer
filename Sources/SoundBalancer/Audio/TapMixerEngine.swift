@@ -4,15 +4,21 @@ import Foundation
 import os
 
 public final class TapMixerEngine: @unchecked Sendable {
-    private let ioQueue = DispatchQueue(label: "com.timstebner.SoundBalancer.tap-io", qos: .userInitiated)
     private var taps: [AudioObjectID: ProcessTap] = [:]
-    public let filterBank = EQFilterBank()
+    private var diagnosticsTimer: DispatchSourceTimer?
 
     private static let logger = Logger(subsystem: "com.timstebner.SoundBalancer", category: "TapMixerEngine")
 
-    public init() {}
+    public init() {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + .seconds(10), repeating: .seconds(10))
+        timer.setEventHandler { [weak self] in self?.logDiagnostics() }
+        timer.resume()
+        diagnosticsTimer = timer
+    }
 
     deinit {
+        diagnosticsTimer?.cancel()
         teardownAll()
     }
 
@@ -36,6 +42,7 @@ public final class TapMixerEngine: @unchecked Sendable {
         }
 
         let compensation = loudnessCompensation(for: outputID)
+        let driftCompensationEnabled = AudioDevices.shouldEnableTapDriftCompensation(for: outputID)
 
         for app in apps {
             guard let gain = effectiveGain(app) else {
@@ -56,12 +63,14 @@ public final class TapMixerEngine: @unchecked Sendable {
                     processObjectID: app.id,
                     outputDeviceUID: outputUID,
                     initialGain: compensatedGain,
-                    filterBank: filterBank,
-                    queue: ioQueue
+                    driftCompensationEnabled: driftCompensationEnabled
                 )
                 if tap.start() {
                     taps[app.id] = tap
                     Self.logger.info("Started process tap for app \(app.name) (\(app.id)) with gain \(compensatedGain)")
+                    Self.logger.info("Output timing: \(AudioDevices.timingSummary(of: outputID), privacy: .public)")
+                    Self.logger.info("Aggregate timing: \(AudioDevices.timingSummary(of: tap.aggregateDeviceID), privacy: .public)")
+                    Self.logger.info("Tap drift compensation enabled: \(driftCompensationEnabled)")
                 }
             }
         }
@@ -98,5 +107,13 @@ public final class TapMixerEngine: @unchecked Sendable {
             return 2.0 // +6 dB mixdown compensation for mono voice communication streams
         }
         return 1.0
+    }
+
+    private func logDiagnostics() {
+        guard !taps.isEmpty else { return }
+        for (processObjectID, tap) in taps {
+            guard let summary = tap.diagnosticsSummary() else { continue }
+            Self.logger.info("Tap latency diagnostics process=\(processObjectID) activeTaps=\(self.taps.count) \(summary, privacy: .public)")
+        }
     }
 }

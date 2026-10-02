@@ -60,6 +60,43 @@ public enum AudioDevices {
         CA.value(deviceID, CA.address(kAudioDevicePropertyTransportType), fallback: 0)
     }
 
+    public static func shouldEnableTapDriftCompensation(for deviceID: AudioDeviceID) -> Bool {
+        switch transportType(of: deviceID) {
+        case kAudioDeviceTransportTypeBluetooth,
+             kAudioDeviceTransportTypeBluetoothLE,
+             kAudioDeviceTransportTypeVirtual,
+             0:
+            return false
+        default:
+            return true
+        }
+    }
+
+    public static func timingSummary(of deviceID: AudioDeviceID) -> String {
+        let sampleRate: Float64 = CA.value(
+            deviceID,
+            CA.address(kAudioDevicePropertyNominalSampleRate),
+            fallback: 0
+        )
+        let bufferFrames: UInt32 = CA.value(
+            deviceID,
+            CA.address(kAudioDevicePropertyBufferFrameSize),
+            fallback: 0
+        )
+        let latencyFrames: UInt32 = CA.value(
+            deviceID,
+            CA.address(kAudioDevicePropertyLatency, scope: kAudioObjectPropertyScopeOutput),
+            fallback: 0
+        )
+        let safetyOffsetFrames: UInt32 = CA.value(
+            deviceID,
+            CA.address(kAudioDevicePropertySafetyOffset, scope: kAudioObjectPropertyScopeOutput),
+            fallback: 0
+        )
+
+        return "\(name(of: deviceID) ?? "Unknown") transport=\(transportType(of: deviceID)) rate=\(Int(sampleRate))Hz buffer=\(bufferFrames)frames latency=\(latencyFrames)frames safetyOffset=\(safetyOffsetFrames)frames"
+    }
+
     public static func isSoundBalancerAggregate(_ deviceID: AudioDeviceID) -> Bool {
         guard let uid = persistentUID(of: deviceID) else { return false }
         return uid.hasPrefix(aggregateUIDPrefix)

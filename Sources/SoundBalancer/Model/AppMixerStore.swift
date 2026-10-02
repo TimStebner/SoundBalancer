@@ -5,15 +5,6 @@ import Observation
 
 @Observable
 public final class AppMixerStore: @unchecked Sendable {
-    public enum Tab: String, CaseIterable, Identifiable, Sendable {
-        case mixer = "Mixer"
-        case equalizer = "Equalizer"
-
-        public var id: String { rawValue }
-    }
-
-    public var selectedTab: Tab = .mixer
-
     public let processMonitor = AudioProcessMonitor()
     public let permission = AudioPermission()
     private let engine = TapMixerEngine()
@@ -26,15 +17,15 @@ public final class AppMixerStore: @unchecked Sendable {
 
     private var gains: [String: Double] = [:]
     private var mutes: Set<String> = []
+    private var nativeRoutingApps: Set<String> = []
 
-    public var isEQEnabled: Bool = false {
+    public var skipAppsDuringInputCapture: Bool = true {
         didSet {
-            engine.filterBank.setBypassed(!isEQEnabled)
-            settings.saveEQEnabled(isEQEnabled)
+            guard oldValue != skipAppsDuringInputCapture else { return }
+            settings.saveSkipAppsDuringInputCapture(skipAppsDuringInputCapture)
+            reconcile()
         }
     }
-    public var eqGains: [Float] = [Float](repeating: 0.0, count: 10)
-    public var selectedPresetName: String = "Flat"
 
     public var isMasterEnabled: Bool = true {
         didSet {
@@ -53,12 +44,8 @@ public final class AppMixerStore: @unchecked Sendable {
     public init() {
         self.gains = settings.loadGains()
         self.mutes = settings.loadMutes()
-        self.eqGains = settings.loadEQGains()
-        self.selectedPresetName = settings.loadEQPresetName()
-        self.isEQEnabled = settings.loadEQEnabled()
-
-        engine.filterBank.setGains(eqGains)
-        engine.filterBank.setBypassed(!isEQEnabled)
+        self.nativeRoutingApps = settings.loadNativeRoutingApps()
+        self.skipAppsDuringInputCapture = settings.loadSkipAppsDuringInputCapture()
 
         refreshDevices()
 
@@ -106,6 +93,22 @@ public final class AppMixerStore: @unchecked Sendable {
     public func isDefault(for app: AudioAppItem) -> Bool {
         let key = appKey(for: app)
         return !mutes.contains(key) && (gains[key] ?? 1.0) == 1.0
+    }
+
+    public func usesNativeRouting(for app: AudioAppItem) -> Bool {
+        nativeRoutingApps.contains(appKey(for: app))
+    }
+
+    public func toggleNativeRouting(for app: AudioAppItem) {
+        let key = appKey(for: app)
+        if nativeRoutingApps.contains(key) {
+            nativeRoutingApps.remove(key)
+        } else {
+            nativeRoutingApps.insert(key)
+        }
+        settings.saveNativeRoutingApps(nativeRoutingApps)
+        engine.dropTap(for: app.id)
+        reconcile()
     }
 
     public func setVolume(_ value: Double, for app: AudioAppItem) {
@@ -165,30 +168,11 @@ public final class AppMixerStore: @unchecked Sendable {
         selectedInputID = device.id
     }
 
-    public func setEQGain(bandIndex: Int, gainDB: Float) {
-        guard bandIndex >= 0, bandIndex < eqGains.count else { return }
-        eqGains[bandIndex] = gainDB
-        selectedPresetName = "Custom"
-        engine.filterBank.setGains(eqGains)
-        settings.saveEQGains(eqGains)
-        settings.saveEQPresetName("Custom")
-    }
-
-    public func applyPreset(_ preset: EQPreset) {
-        eqGains = preset.gains
-        selectedPresetName = preset.name
-        engine.filterBank.setGains(eqGains)
-        settings.saveEQGains(eqGains)
-        settings.saveEQPresetName(preset.name)
-    }
-
-    public func resetEQ() {
-        applyPreset(EQPreset.flat)
-    }
-
     private func effectiveGain(for app: AudioAppItem) -> Float32? {
         guard isMasterEnabled else { return nil }
         let key = appKey(for: app)
+        guard !nativeRoutingApps.contains(key) else { return nil }
+        guard !skipAppsDuringInputCapture || !app.isRunningInput else { return nil }
         let isMuted = mutes.contains(key)
         let userVolume = isMuted ? 0.0 : (gains[key] ?? 1.0)
 

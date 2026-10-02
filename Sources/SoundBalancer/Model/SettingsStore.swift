@@ -7,9 +7,8 @@ public final class SettingsStore: @unchecked Sendable {
 
     private let keyAppGains = "com.timstebner.SoundBalancer.appGains"
     private let keyAppMutes = "com.timstebner.SoundBalancer.appMutes"
-    private let keyEQGains = "com.timstebner.SoundBalancer.eqGains"
-    private let keyEQPresetName = "com.timstebner.SoundBalancer.eqPresetName"
-    private let keyEQEnabled = "com.timstebner.SoundBalancer.eqEnabled"
+    private let keyNativeRoutingApps = "com.timstebner.SoundBalancer.nativeRoutingApps"
+    private let keySkipAppsDuringInputCapture = "com.timstebner.SoundBalancer.skipAppsDuringInputCapture"
 
     public func loadGains() -> [String: Double] {
         defaults.dictionary(forKey: keyAppGains) as? [String: Double] ?? [:]
@@ -28,31 +27,19 @@ public final class SettingsStore: @unchecked Sendable {
         defaults.set(Array(mutes), forKey: keyAppMutes)
     }
 
-    public func loadEQGains() -> [Float] {
-        let array = defaults.array(forKey: keyEQGains) as? [Double]
-        if let array, array.count == 10 {
-            return array.map { Float($0) }
-        }
-        return [Float](repeating: 0.0, count: 10)
+    public func loadNativeRoutingApps() -> Set<String> {
+        Set(defaults.stringArray(forKey: keyNativeRoutingApps) ?? [])
     }
 
-    public func saveEQGains(_ gains: [Float]) {
-        defaults.set(gains.map { Double($0) }, forKey: keyEQGains)
+    public func saveNativeRoutingApps(_ apps: Set<String>) {
+        defaults.set(Array(apps), forKey: keyNativeRoutingApps)
     }
 
-    public func loadEQPresetName() -> String {
-        defaults.string(forKey: keyEQPresetName) ?? "Flat"
+    public func loadSkipAppsDuringInputCapture() -> Bool {
+        defaults.object(forKey: keySkipAppsDuringInputCapture) as? Bool ?? true
     }
 
-    public func saveEQPresetName(_ name: String) {
-        defaults.set(name, forKey: keyEQPresetName)
-    }
-
-    public func loadEQEnabled() -> Bool {
-        defaults.bool(forKey: keyEQEnabled)
-    }
-
-    public func saveEQEnabled(_ enabled: Bool) {
-        defaults.set(enabled, forKey: keyEQEnabled)
+    public func saveSkipAppsDuringInputCapture(_ skip: Bool) {
+        defaults.set(skip, forKey: keySkipAppsDuringInputCapture)
     }
 }

@@ -39,15 +39,21 @@ public final class AudioProcessMonitor: @unchecked Sendable {
             of: AudioObjectID.self
         )
 
-        var discovered: [AudioAppItem] = []
+        var discovered: [(item: AudioAppItem, key: String)] = []
+        var inputCaptureKeys = Set<String>()
         for id in processIDs {
-            let isRunning = CA.value(
+            let isRunningOutput = CA.value(
                 id,
                 CA.address(kAudioProcessPropertyIsRunningOutput),
                 fallback: UInt32(0)
             ) != 0
+            let isRunningInput = CA.value(
+                id,
+                CA.address(kAudioProcessPropertyIsRunningInput),
+                fallback: UInt32(0)
+            ) != 0
 
-            guard isRunning else { continue }
+            guard isRunningOutput || isRunningInput else { continue }
 
             let pid = CA.value(
                 id,
@@ -65,28 +71,48 @@ public final class AudioProcessMonitor: @unchecked Sendable {
             let resolvedName = ownerApp?.localizedName ?? Self.fallbackName(bundleID: bundleID, pid: pid)
             let resolvedBundleID = ownerApp?.bundleIdentifier ?? bundleID
             let resolvedIcon = ownerApp?.icon
+            let key = resolvedBundleID ?? "pid:\(pid)"
 
-            discovered.append(
-                AudioAppItem(
+            if isRunningInput {
+                inputCaptureKeys.insert(key)
+            }
+
+            guard isRunningOutput else { continue }
+
+            discovered.append((
+                item: AudioAppItem(
                     id: id,
                     pid: pid,
                     name: resolvedName,
                     bundleID: resolvedBundleID,
                     icon: resolvedIcon,
                     isRunningOutput: true
-                )
-            )
+                ),
+                key: key
+            ))
         }
 
-        let sorted = discovered.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let sorted = discovered.sorted {
+            $0.item.name.localizedStandardCompare($1.item.name) == .orderedAscending
+        }
 
         var unique: [AudioAppItem] = []
         var seenKeys = Set<String>()
-        for item in sorted {
-            let key = item.bundleID ?? item.name
-            if !seenKeys.contains(key) {
-                seenKeys.insert(key)
-                unique.append(item)
+        for entry in sorted {
+            let deduplicationKey = entry.item.bundleID ?? entry.item.name
+            if seenKeys.insert(deduplicationKey).inserted {
+                let item = entry.item
+                unique.append(
+                    AudioAppItem(
+                        id: item.id,
+                        pid: item.pid,
+                        name: item.name,
+                        bundleID: item.bundleID,
+                        icon: item.icon,
+                        isRunningOutput: item.isRunningOutput,
+                        isRunningInput: inputCaptureKeys.contains(entry.key)
+                    )
+                )
             }
         }
 

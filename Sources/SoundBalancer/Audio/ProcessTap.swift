@@ -1,21 +1,100 @@
 import AudioToolbox
 import CoreAudio
+import Darwin
 import Foundation
 import os
+import Synchronization
+
+private final class ProcessTapMetrics: @unchecked Sendable {
+    private let callbackCount = Atomic<UInt64>(0)
+    private let totalCallbackInterval = Atomic<UInt64>(0)
+    private let maxCallbackInterval = Atomic<UInt64>(0)
+    private let totalRenderDuration = Atomic<UInt64>(0)
+    private let maxRenderDuration = Atomic<UInt64>(0)
+    private let inputFrames = Atomic<UInt64>(0)
+    private let outputFrames = Atomic<UInt64>(0)
+    private let lastCallbackTime = Atomic<UInt64>(0)
+
+    func record(start: UInt64, end: UInt64, inputFrameCount: UInt64, outputFrameCount: UInt64) {
+        callbackCount.wrappingAdd(1, ordering: .relaxed)
+        inputFrames.wrappingAdd(inputFrameCount, ordering: .relaxed)
+        outputFrames.wrappingAdd(outputFrameCount, ordering: .relaxed)
+
+        let previousCallbackTime = lastCallbackTime.exchange(start, ordering: .relaxed)
+        if previousCallbackTime > 0 {
+            let interval = start &- previousCallbackTime
+            totalCallbackInterval.wrappingAdd(interval, ordering: .relaxed)
+            updateMaximum(interval, value: maxCallbackInterval)
+        }
+
+        let duration = end &- start
+        totalRenderDuration.wrappingAdd(duration, ordering: .relaxed)
+        updateMaximum(duration, value: maxRenderDuration)
+    }
+
+    func summary() -> String? {
+        let callbacks = callbackCount.exchange(0, ordering: .relaxed)
+        _ = lastCallbackTime.exchange(0, ordering: .relaxed)
+        guard callbacks > 0 else { return nil }
+
+        let callbackIntervals = totalCallbackInterval.exchange(0, ordering: .relaxed)
+        let longestCallbackInterval = maxCallbackInterval.exchange(0, ordering: .relaxed)
+        let renderDuration = totalRenderDuration.exchange(0, ordering: .relaxed)
+        let longestRenderDuration = maxRenderDuration.exchange(0, ordering: .relaxed)
+        let totalInputFrames = inputFrames.exchange(0, ordering: .relaxed)
+        let totalOutputFrames = outputFrames.exchange(0, ordering: .relaxed)
+
+        let intervals = callbacks - 1
+        let averageIntervalMS = intervals > 0
+            ? Double(AudioConvertHostTimeToNanos(callbackIntervals)) / Double(intervals) / 1_000_000
+            : 0
+        let averageRenderMS = Double(AudioConvertHostTimeToNanos(renderDuration)) / Double(callbacks) / 1_000_000
+        let maximumIntervalMS = Double(AudioConvertHostTimeToNanos(longestCallbackInterval)) / 1_000_000
+        let maximumRenderMS = Double(AudioConvertHostTimeToNanos(longestRenderDuration)) / 1_000_000
+
+        return String(
+            format: "callbacks=%llu avgInterval=%.2fms maxInterval=%.2fms avgRender=%.3fms maxRender=%.3fms inputFrames=%llu outputFrames=%llu",
+            callbacks,
+            averageIntervalMS,
+            maximumIntervalMS,
+            averageRenderMS,
+            maximumRenderMS,
+            totalInputFrames,
+            totalOutputFrames
+        )
+    }
+
+    private func updateMaximum(_ candidate: UInt64, value: borrowing Atomic<UInt64>) {
+        var current = value.load(ordering: .relaxed)
+        while candidate > current {
+            let result = value.compareExchange(
+                expected: current,
+                desired: candidate,
+                ordering: .relaxed
+            )
+            if result.exchanged { return }
+            current = result.original
+        }
+    }
+}
 
 public final class ProcessTap: @unchecked Sendable {
     public static let aggregateUIDPrefix = "SoundBalancerAgg-"
 
     public let processObjectID: AudioObjectID
     private let outputDeviceUID: String
+    private let driftCompensationEnabled: Bool
     private let queue: DispatchQueue
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
 
+    var aggregateDeviceID: AudioDeviceID { aggregateID }
+
     private let gainPtr: UnsafeMutablePointer<Float32>
-    private let filterBank: EQFilterBank
+    private let currentGainPtr: UnsafeMutablePointer<Float32>
+    private let metrics = ProcessTapMetrics()
 
     public private(set) var isRunning = false
     public private(set) var lastError: String?
@@ -26,25 +105,35 @@ public final class ProcessTap: @unchecked Sendable {
         processObjectID: AudioObjectID,
         outputDeviceUID: String,
         initialGain: Float32,
-        filterBank: EQFilterBank,
-        queue: DispatchQueue
+        driftCompensationEnabled: Bool
     ) {
         self.processObjectID = processObjectID
         self.outputDeviceUID = outputDeviceUID
-        self.queue = queue
-        self.filterBank = filterBank
+        self.driftCompensationEnabled = driftCompensationEnabled
+        self.queue = DispatchQueue(
+            label: "com.timstebner.SoundBalancer.tap-io.\(processObjectID)",
+            qos: .userInitiated
+        )
         self.gainPtr = UnsafeMutablePointer<Float32>.allocate(capacity: 1)
         self.gainPtr.initialize(to: initialGain)
+        self.currentGainPtr = UnsafeMutablePointer<Float32>.allocate(capacity: 1)
+        self.currentGainPtr.initialize(to: initialGain)
     }
 
     deinit {
         cleanup()
         gainPtr.deinitialize(count: 1)
         gainPtr.deallocate()
+        currentGainPtr.deinitialize(count: 1)
+        currentGainPtr.deallocate()
     }
 
     public func setGain(_ gain: Float32) {
         gainPtr.pointee = gain
+    }
+
+    func diagnosticsSummary() -> String? {
+        metrics.summary()
     }
 
     @discardableResult
@@ -78,7 +167,7 @@ public final class ProcessTap: @unchecked Sendable {
             ],
             kAudioAggregateDeviceTapListKey: [
                 [
-                    kAudioSubTapDriftCompensationKey: true,
+                    kAudioSubTapDriftCompensationKey: driftCompensationEnabled,
                     kAudioSubTapUIDKey: description.uuid.uuidString
                 ]
             ]
@@ -94,13 +183,33 @@ public final class ProcessTap: @unchecked Sendable {
         }
         aggregateID = newAggregate
 
+        let sampleRate: Float64 = CA.value(
+            aggregateID,
+            CA.address(kAudioDevicePropertyNominalSampleRate),
+            fallback: 48000.0
+        )
+        let rampCoefficient = Float32(1.0 - exp(-1.0 / (max(sampleRate, 8000.0) * 0.030)))
         let gainPtr = self.gainPtr
-        let filterBank = self.filterBank
+        let currentGainPtr = self.currentGainPtr
+        let metrics = self.metrics
         let ioBlock: AudioDeviceIOBlock = { _, inInputData, _, outOutputData, _ in
+            let callbackStart = mach_absolute_time()
             let gain = gainPtr.pointee
             let input = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
             let output = UnsafeMutableAudioBufferListPointer(outOutputData)
-            ProcessTap.renderMix(from: input, to: output, gain: gain, filterBank: filterBank)
+            ProcessTap.renderMix(
+                from: input,
+                to: output,
+                gain: gain,
+                currentGain: currentGainPtr,
+                rampCoefficient: rampCoefficient
+            )
+            metrics.record(
+                start: callbackStart,
+                end: mach_absolute_time(),
+                inputFrameCount: ProcessTap.frameCount(in: input),
+                outputFrameCount: ProcessTap.frameCount(in: output)
+            )
         }
 
         var newProcID: AudioDeviceIOProcID?
@@ -139,11 +248,20 @@ public final class ProcessTap: @unchecked Sendable {
         return x
     }
 
+    private static func frameCount(in buffers: UnsafeMutableAudioBufferListPointer) -> UInt64 {
+        guard buffers.count > 0 else { return 0 }
+        let firstBuffer = buffers[0]
+        let channels = max(1, Int(firstBuffer.mNumberChannels))
+        let bytesPerFrame = channels * MemoryLayout<Float32>.size
+        return UInt64(firstBuffer.mDataByteSize) / UInt64(bytesPerFrame)
+    }
+
     private static func renderMix(
         from input: UnsafeMutableAudioBufferListPointer,
         to output: UnsafeMutableAudioBufferListPointer,
         gain: Float32,
-        filterBank: EQFilterBank
+        currentGain: UnsafeMutablePointer<Float32>,
+        rampCoefficient: Float32
     ) {
         guard output.count > 0 else { return }
 
@@ -188,6 +306,7 @@ public final class ProcessTap: @unchecked Sendable {
             }
         }
 
+        var smoothedGain = currentGain.pointee
         if inChannels >= 2 && outChannels >= 2,
            let (srcL, sStrideL) = inChannelPtr(0),
            let (srcR, sStrideR) = inChannelPtr(1),
@@ -196,13 +315,9 @@ public final class ProcessTap: @unchecked Sendable {
 
             var f = 0
             while f < frames {
-                var sL = srcL[f * sStrideL] * gain
-                var sR = srcR[f * sStrideR] * gain
-
-                filterBank.processSample(left: &sL, right: &sR)
-
-                dstL[f * dStrideL] = softLimit(sL)
-                dstR[f * dStrideR] = softLimit(sR)
+                smoothedGain += (gain - smoothedGain) * rampCoefficient
+                dstL[f * dStrideL] = softLimit(srcL[f * sStrideL] * smoothedGain)
+                dstR[f * dStrideR] = softLimit(srcR[f * sStrideR] * smoothedGain)
                 f += 1
             }
 
@@ -223,23 +338,32 @@ public final class ProcessTap: @unchecked Sendable {
                 }
             }
         } else {
-            for co in 0..<outChannels {
-                guard let (dst, dStride) = outChannelPtr(co) else { continue }
-                let ci = co < inChannels ? co : inChannels - 1
-                if let (src, sStride) = inChannelPtr(ci) {
-                    var f = 0
-                    while f < frames {
-                        dst[f * dStride] = softLimit(src[f * sStride] * gain)
-                        f += 1
+            var f = 0
+            while f < frames {
+                smoothedGain += (gain - smoothedGain) * rampCoefficient
+                for co in 0..<outChannels {
+                    guard let (dst, dStride) = outChannelPtr(co) else { continue }
+                    let ci = co < inChannels ? co : inChannels - 1
+                    if let (src, sStride) = inChannelPtr(ci) {
+                        dst[f * dStride] = softLimit(src[f * sStride] * smoothedGain)
+                    } else {
+                        dst[f * dStride] = 0
                     }
-                    var t = frames
-                    while t < outFrames { dst[t * dStride] = 0; t += 1 }
-                } else {
-                    var t = 0
-                    while t < outFrames { dst[t * dStride] = 0; t += 1 }
                 }
+                f += 1
+            }
+
+            var t = frames
+            while t < outFrames {
+                for co in 0..<outChannels {
+                    if let (dst, dStride) = outChannelPtr(co) {
+                        dst[t * dStride] = 0
+                    }
+                }
+                t += 1
             }
         }
+        currentGain.pointee = smoothedGain
     }
 
     private func cleanup() {

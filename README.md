@@ -1,6 +1,6 @@
 # SoundBalancer 🎧
 
-**SoundBalancer** ist eine native, moderne macOS Statusleisten-Applikation (Menu Bar Extra) in Swift & SwiftUI mit **Liquid Glass**-Design. Sie ermöglicht die individuelle Lautstärkeregelung für alle laufenden Programme, die getrennte Auswahl von Ein- und Ausgabegeräten und bietet einen integrierten 10-Band Graphic Equalizer – **völlig ohne virtuelle Audiotreiber oder Kernel-Erweiterungen**, basierend auf Apples nativer **Core Audio Process-Tap API** (macOS 14.2+).
+**SoundBalancer** ist eine native, moderne macOS Statusleisten-Applikation (Menu Bar Extra) in Swift & SwiftUI mit **Liquid Glass**-Design. Sie ermöglicht die individuelle Lautstärkeregelung für alle laufenden Programme und die getrennte Auswahl von Ein- und Ausgabegeräten – **völlig ohne virtuelle Audiotreiber oder Kernel-Erweiterungen**, basierend auf Apples nativer **Core Audio Process-Tap API** (macOS 14.2+).
 
 ---
 
@@ -8,7 +8,8 @@
 
 ### 1. Per-App Lautstärkemixer (0% bis 400% Gain Boost, +12 dB)
 * **WhatsApp vs. YouTube Problem behoben**: WhatsApp-Sprachnachrichten und Anrufe sind oft drastisch lauter als Webvideos oder Musik. In SoundBalancer kann jedes Programm einzeln geregelt werden (z. B. WhatsApp dämpfen oder YouTube/Safari auf bis zu 400% boosten).
-* **Call Ducking Ausgleich & Voice-Kompensation**: WhatsApp-Sprachanrufe und Kommunikations-Apps werden automatisch mixdown-kompensiert (+6 dB), sodass 100% genau der Bypass-Lautstärke entspricht. Der erweiterte 400%-Booster gleicht das automatische macOS Call-Ducking für Hintergrundmedien vollständig aus.
+* **Call Passthrough & Voice-Kompensation**: Apps, die gerade das Mikrofon verwenden, werden standardmäßig direkt durch macOS geroutet, damit der Process Tap die Echo-Unterdrückung bei Anrufen nicht stört. Gespeicherte Lautstärke- und Mute-Werte greifen nach dem Call wieder; das Verhalten ist abschaltbar. Außerhalb eines Calls werden Kommunikations-Apps weiterhin mixdown-kompensiert (+6 dB).
+* **Native App-Umleitung**: Einzelne Apps lassen sich direkt über macOS routen, wenn ein Bluetooth-Gerät oder die App selbst mit Process Taps Probleme verursacht. Für diese App sind Lautstärke und Mute in SoundBalancer währenddessen nicht aktiv.
 * **Hyperbolic Soft Limiter (`tanh`)**: Verhindert digitales Clipping bei extremen Boost-Pegeln über 100% und garantiert sauberen Klang ohne Verzerrungen.
 * **Echte App-Erkennung**: Erkennt laufende Audio-Apps automatisch und löst Browser-/Electron-Hilfsprozesse (z. B. WhatsApp Helper, Chrome Helper) auf die echte App mit Name und App-Icon auf.
 * **Mute & Reset**: Schnelles Stummschalten oder Zurücksetzen auf 100% mit einem Klick.
@@ -20,12 +21,7 @@
 ### 3. Loudness-Kompensation für AirPods & Mehrkanal
 * **Schluss mit zu leisen AirPods**: Verhindert die automatische Core-Audio-Dämpfung bei Aggregate-Devices auf AirPods und Mehrkanal-Geräten durch dynamische Kanal-Kompensation.
 
-### 4. 10-Band Graphic Equalizer & Presets
-* 10 ISO-Standardbänder (32 Hz, 64 Hz, 125 Hz, 250 Hz, 500 Hz, 1 kHz, 2 kHz, 4 kHz, 8 kHz, 16 kHz) mit klanggetreuen RBJ-Biquad-Filtern.
-* Vordefinierte Presets: *Flat, Bass Booster, Bass Reducer, Vocal Enhancer, Podcast, Electronic, Rock, Treble Booster*.
-* Master EQ Bypass-Schalter für A/B-Vergleich ohne Audio-Knacken.
-
-### 5. Liquid Glass Design & Zero-Footprint
+### 4. Liquid Glass Design & Zero-Footprint
 * Natives SwiftUI mit macOS `.ultraThinMaterial`, Glassmorphism-Karten, dezenten Lichtkanten und animierten Reglern.
 * **Zero-Footprint**: Sobald du SoundBalancer schließt (`Cmd+Q` oder Power-Icon), werden alle Taps sofort beendet und der Ton läuft wieder direkt über den macOS-Standardpfad. Keine Hintergrund-Daemons oder Reste im System.
 
