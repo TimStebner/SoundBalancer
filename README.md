@@ -1,47 +1,88 @@
 # SoundBalancer 🎧
 
-**SoundBalancer** ist eine native, moderne macOS Statusleisten-Applikation (Menu Bar Extra) in Swift & SwiftUI mit **Liquid Glass**-Design. Sie ermöglicht die individuelle Lautstärkeregelung für alle laufenden Programme und die getrennte Auswahl von Ein- und Ausgabegeräten – **völlig ohne virtuelle Audiotreiber oder Kernel-Erweiterungen**, basierend auf Apples nativer **Core Audio Process-Tap API** (macOS 14.2+).
+**English** | [Deutsch](README.de.md)
+
+[![macOS](https://img.shields.io/badge/macOS-15.0%2B-blue.svg)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Architecture-Apple%20Silicon%20(arm64)-lightgrey.svg)]()
+
+**SoundBalancer** is a native, modern macOS menu bar application built with Swift 6 and SwiftUI in a sleek **Liquid Glass** aesthetic. It provides per-application volume mixing and instant input/output device switching — **without virtual audio drivers or kernel extensions**, powered by Apple's native **Core Audio Process Tap API** (macOS 15.0+).
 
 ---
 
-## 🚀 Gelöste Probleme & Features
+## 🚀 Key Features & Solved Problems
 
-### 1. Per-App Lautstärkemixer (0% bis 400% Gain Boost, +12 dB)
-* **WhatsApp vs. YouTube Problem behoben**: WhatsApp-Sprachnachrichten und Anrufe sind oft drastisch lauter als Webvideos oder Musik. In SoundBalancer kann jedes Programm einzeln geregelt werden (z. B. WhatsApp dämpfen oder YouTube/Safari auf bis zu 400% boosten).
-* **Call Passthrough & Voice-Kompensation**: Apps, die gerade das Mikrofon verwenden, werden standardmäßig direkt durch macOS geroutet, damit der Process Tap die Echo-Unterdrückung bei Anrufen nicht stört. Gespeicherte Lautstärke- und Mute-Werte greifen nach dem Call wieder; das Verhalten ist abschaltbar. Außerhalb eines Calls werden Kommunikations-Apps weiterhin mixdown-kompensiert (+6 dB).
-* **Native App-Umleitung**: Einzelne Apps lassen sich direkt über macOS routen, wenn ein Bluetooth-Gerät oder die App selbst mit Process Taps Probleme verursacht. Für diese App sind Lautstärke und Mute in SoundBalancer währenddessen nicht aktiv.
-* **Hyperbolic Soft Limiter (`tanh`)**: Verhindert digitales Clipping bei extremen Boost-Pegeln über 100% und garantiert sauberen Klang ohne Verzerrungen.
-* **Echte App-Erkennung**: Erkennt laufende Audio-Apps automatisch und löst Browser-/Electron-Hilfsprozesse (z. B. WhatsApp Helper, Chrome Helper) auf die echte App mit Name und App-Icon auf.
-* **Mute & Reset**: Schnelles Stummschalten oder Zurücksetzen auf 100% mit einem Klick.
+### 1. Per-App Volume Mixer (0% to 400% Gain Boost, +12 dB)
+* **Fix the WhatsApp vs. YouTube Disparity**: Voice messages or calls are frequently vastly louder than background web videos or music. SoundBalancer lets you dial in individual volume levels per app (e.g., lower WhatsApp or boost quiet Safari/YouTube streams up to 400%).
+* **Call Passthrough & Voice Compensation**: Apps currently capturing microphone audio are automatically routed directly through macOS by default to preserve hardware echo cancellation during voice calls. Saved volume and mute preferences restore seamlessly once the call finishes. Voice communication apps outside calls receive automatic +6 dB mixdown compensation.
+* **Native App Routing Toggle**: Any app can be toggled to route directly through macOS if specific Bluetooth peripherals or specialized software require bypassing Process Taps.
+* **Hyperbolic Soft Limiter (`tanh`)**: Seamlessly absorbs volume spikes above 100% (+12 dB headroom), preventing harsh digital clipping and distortion.
+* **Process Resolution**: Automatically maps helper processes (such as WhatsApp Helper, Chrome Helper, Electron renderers) back to their parent application with official app icons and names.
+* **Instant Mute & Reset**: Toggle mute or return to default 100% volume with a single click.
 
-### 2. Schnelle Ein- und Ausgabegeräte-Auswahl (AirPods Telefonie-Fix)
-* **Telefonate ohne Qualitätsverlust**: Wenn AirPods verbunden sind, schaltet macOS bei Telefonaten (WhatsApp, Teams, FaceTime) oft automatisch auch das Mikrofon auf die AirPods, was sie in den minderwertigen 16 kHz Bluetooth-Handsfree-Codec zwingt.
-* **Die Lösung**: In SoundBalancer wählst du direkt im Menü **Ausgabe: AirPods** und **Eingabe: MacBook Air Mikrofon**. Dadurch bleiben deine AirPods im glasklaren Stereo-AAC-Modus (44.1/48 kHz) und die Stimme wird über das MacBook-Mikrofon übertragen.
+### 2. Rapid Audio Device Switching (AirPods Call Quality Fix)
+* **High-Fidelity Audio During Calls**: When AirPods connect, macOS often switches both input and output to AirPods during calls (Teams, WhatsApp, FaceTime), dropping audio into the low-bandwidth 16 kHz Bluetooth Handsfree profile.
+* **The Solution**: Select **Output: AirPods** and **Input: Built-in MacBook Microphone** directly in SoundBalancer's menu bar. Your AirPods remain in pristine stereo AAC (44.1 / 48 kHz) while your voice is captured cleanly by the Mac.
 
-### 3. Loudness-Kompensation für AirPods & Mehrkanal
-* **Schluss mit zu leisen AirPods**: Verhindert die automatische Core-Audio-Dämpfung bei Aggregate-Devices auf AirPods und Mehrkanal-Geräten durch dynamische Kanal-Kompensation.
+### 3. Loudness Compensation for AirPods & Multichannel Outputs
+* Avoids Core Audio attenuation on aggregate output devices through dynamic channel compensation.
 
-### 4. Liquid Glass Design & Zero-Footprint
-* Natives SwiftUI mit macOS `.ultraThinMaterial`, Glassmorphism-Karten, dezenten Lichtkanten und animierten Reglern.
-* **Zero-Footprint**: Sobald du SoundBalancer schließt (`Cmd+Q` oder Power-Icon), werden alle Taps sofort beendet und der Ton läuft wieder direkt über den macOS-Standardpfad. Keine Hintergrund-Daemons oder Reste im System.
+### 4. Liquid Glass UI & Zero-Footprint
+* Designed natively with SwiftUI using macOS `.ultraThinMaterial`, glassmorphism cards, and responsive custom sliders.
+* **Zero Footprint**: Quitting SoundBalancer (`Cmd+Q` or the power icon) tears down all taps immediately. Audio instantly routes via the macOS default path. No background daemons, drivers, or system leftovers.
 
 ---
 
-## 🛠️ Build & Installation
+## 💻 System Requirements
 
-### Kompilieren & App-Bundle erstellen:
+* **OS**: macOS 15.0 (Sequoia) or newer
+* **Architecture**: Apple Silicon (arm64)
+* **Permission**: System Audio Recording permission (*System Settings > Privacy & Security > Screen & System Audio Recording*)
+
+---
+
+## 📦 Download & Installation
+
+Pre-built binaries can be found in the [release](release/) directory:
+* Download **[SoundBalancer-arm64.dmg](release/SoundBalancer-arm64.dmg)**
+* Open the DMG and drag `SoundBalancer.app` into `/Applications`.
+
+---
+
+## 🛠️ Building from Source
+
+### Prerequisites
+* Xcode 16.0+ or Command Line Tools with Swift 6.0+
+
+### Build Application Bundle
 ```bash
 make app
 ```
-Das fertige, signierte Programm liegt danach unter `build/SoundBalancer.app`.
+The compiled, signed app bundle will be placed at `build/SoundBalancer.app`.
 
-### Starten:
+### Build Distribution DMG
+```bash
+make dmg
+```
+The DMG image will be created at `release/SoundBalancer-arm64.dmg`.
+
+### Run
 ```bash
 open build/SoundBalancer.app
 ```
-*Hinweis*: Beim ersten Start bittet macOS um die Berechtigung **System Audio Recording** (unter *Systemeinstellungen > Datenschutz & Sicherheit > Bildschirm- & Systemaudioaufnahme*), damit Core Audio die Audio-Streams für den Mixer abgreifen darf.
 
-### Nach `/Applications` kopieren (optional):
-```bash
-cp -R build/SoundBalancer.app /Applications/
-```
+> **Note on Permissions**: On initial launch, macOS will prompt for **Audio Capture / System Audio Recording** permissions so that Core Audio can intercept process streams for mixing.
+
+---
+
+## 🔒 Privacy & Architecture
+
+* **100% Local**: SoundBalancer does not connect to the internet, make external network calls, or transmit telemetry.
+* **Driverless**: Built exclusively on Apple's sanctioned user-space `CATapDescription` and `AudioHardwareCreateProcessTap` APIs. No kexts or system extensions required.
+
+---
+
+## 📄 License
+
+SoundBalancer is open source software licensed under the [MIT License](LICENSE).

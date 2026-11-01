@@ -1,7 +1,15 @@
-# macOS
+# macOS System Files
 .DS_Store
-*.swp
-*~
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
 
 # Swift / SPM
 .build/
@@ -12,7 +20,22 @@ Package.resolved
 # App Bundles & Build Output
 build/
 DerivedData/
+*.app/
+*.dSYM/
 
-# IDE
+# Xcode & IDEs
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xcuserdatad/
 .vscode/
 .idea/
+
+# Editors & Backups
+*.swp
+*~
+*.bak
+
+# Environment / Local Secrets
+.env
+*.env.local
